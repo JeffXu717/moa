@@ -71,12 +71,16 @@ public class kNNwithNearestCentroid extends AbstractClassifier implements MultiC
 
     protected Instances window;
 	protected Instances centroids;
+	private Map<Integer, CentroidInfo> classValCentroidInfoMap;
 
 	@Override
 	public void setModelContext(InstancesHeader context) {
 		try {
 			this.window = new Instances(context,0); //new StringReader(context.toString())
 			this.window.setClassIndex(context.classIndex());
+			this.centroids = new Instances(context,0); //new StringReader(context.toString())
+			this.centroids.setClassIndex(context.classIndex());
+			classValCentroidInfoMap = new HashMap<>();
 		} catch(Exception e) {
 			System.err.println("Error: no Model Context available.");
 			e.printStackTrace();
@@ -90,32 +94,78 @@ public class kNNwithNearestCentroid extends AbstractClassifier implements MultiC
     }
 
 
-	private Map<Integer, InstanceGroup> classValInstanceGroupMap;
-
 	private void addInst(Instance inst, int instClassVal)
 	{
-		this.window.add(inst);
-		// ? How to cal centroid
+		// add to window
+		window.add(inst);
+
+		if (!classValCentroidInfoMap.containsKey(instClassVal)) //first instance of this class
+		{
+			CentroidInfo centroidInfo = new CentroidInfo();
+			classValCentroidInfoMap.put(instClassVal, centroidInfo);
+			centroids.add(inst);
+			centroidInfo.setCentroidIndex(centroids.numInstances() - 1);
+			centroidInfo.incrementNumSameClass();
+		}
+		else
+		{
+			CentroidInfo centroidInfo = classValCentroidInfoMap.get(instClassVal);
+			Instance centroid = centroids.get(centroidInfo.centroidIndex);
+			int numSameClass = centroidInfo.getNumSameClass();
+			// cal values for new centroid after adding inst
+			for (int i = 0; i < centroid.numValues(); i++)
+			{
+				if (i != centroid.classIndex())
+				{
+					double centroidVal = centroid.value(i);
+					double newInstVal = inst.value(i);
+					centroid.setValue(i, (centroidVal * numSameClass + newInstVal) / (numSameClass + 1));
+				}
+			}
+			// +1 inst with same class
+			centroidInfo.incrementNumSameClass();
+		}
 	}
 
 	private void deleteInst()
 	{
+		Instance toDeleteInst = window.get(0);
+		int toDeleteInstClassVal = (int) toDeleteInst.classValue();
+
+		assert classValCentroidInfoMap.containsKey(toDeleteInstClassVal);
+
+		CentroidInfo centroidInfo = classValCentroidInfoMap.get(toDeleteInstClassVal);
+		Instance centroid = centroids.get(centroidInfo.centroidIndex);
+		int numSameClass = centroidInfo.getNumSameClass();
+
+		assert numSameClass >= 1;
+
+		// cal values for new centroid after adding inst
+		for (int i = 0; i < centroid.numValues(); i++)
+		{
+			if (i != centroid.classIndex())
+			{
+				double centroidVal = centroid.value(i);
+				double toDeleteInstVal = toDeleteInst.value(i);
+				centroid.setValue(i, (centroidVal * numSameClass - toDeleteInstVal) / (numSameClass - 1));
+			}
+		}
+		// +1 inst with same class
+		centroidInfo.decrementNumSameClass();
+
+		// delete from window
 		this.window.delete(0);
-		// ? How to cal centroid
 	}
 
     @Override
     public void trainOnInstanceImpl(Instance inst) {
 		int instClassVal = (int) inst.classValue();
 		if (inst.classValue() > C)
-			C = (int) instClassVal;
+			C = instClassVal;
 		if (this.window == null) { //Init window
 			this.window = new Instances(inst.dataset());
-			this.classValInstanceGroupMap = new HashMap<>();
-		}
-		if (!this.classValInstanceGroupMap.containsKey(instClassVal))
-		{
-			this.classValInstanceGroupMap.put(instClassVal, new InstanceGroup());
+			this.centroids = new Instances(inst.dataset());
+			this.classValCentroidInfoMap = new HashMap<>();
 		}
 
 		if (this.limitOption.getValue() <= this.window.numInstances()) { // If out of limit
@@ -203,27 +253,39 @@ public class kNNwithNearestCentroid extends AbstractClassifier implements MultiC
     }
 }
 
-class InstanceGroup
+class CentroidInfo
 {
-	int numInGroup;
-	Instance centroid;
+	int numSameClass;
+	int centroidIndex;
 
-	public int getNumInGroup()
+	public int getNumSameClass()
 	{
-		return numInGroup;
+		return numSameClass;
 	}
 
-	public void setNumInGroup(int numInGroup)
+	public void setNumSameClass(int numSameClass)
 	{
-		this.numInGroup = numInGroup;
+		this.numSameClass = numSameClass;
 	}
 
-	public Instance getCentroid()
+	public void incrementNumSameClass()
 	{
-		return centroid;
+		numSameClass++;
 	}
 
-	public InstanceGroup() {
-		numInGroup = 0;
+	public void decrementNumSameClass()
+	{
+		numSameClass--;
+	}
+
+	public int getCentroidIndex()
+	{
+		return centroidIndex;
+	}
+
+	public void setCentroidIndex(int centroidIndex) { this.centroidIndex = centroidIndex; }
+
+	public CentroidInfo() {
+		numSameClass = 0;
 	}
 }

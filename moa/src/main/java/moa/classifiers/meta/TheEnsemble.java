@@ -1,5 +1,6 @@
 package moa.classifiers.meta;
 
+import com.github.javacliparser.FlagOption;
 import com.github.javacliparser.IntOption;
 import com.yahoo.labs.samoa.instances.Instance;
 import moa.capabilities.CapabilitiesHandler;
@@ -10,6 +11,8 @@ import moa.classifiers.trees.HoeffdingTree;
 import moa.core.DoubleVector;
 import moa.core.Measurement;
 import moa.options.ClassOption;
+
+import java.util.Random;
 
 public class TheEnsemble extends AbstractClassifier implements MultiClassClassifier, CapabilitiesHandler {
 
@@ -29,6 +32,12 @@ public class TheEnsemble extends AbstractClassifier implements MultiClassClassif
 
     public IntOption winLengthToUpdateEnsembleOption = new IntOption("winLengthUpdateEnsemble", 'l',
             "Every l instances ensemble will be updated.", 1000, 1, Integer.MAX_VALUE);
+
+    public IntOption randomSeedOption = new IntOption("randomSeed", 'r',
+                                                          "Seed for generating base learner with random hyperparams", -1);
+
+    public FlagOption systemTimeAsRandomSeedOption = new FlagOption("systemTimeAsRandomSeed", 't',
+            "Using system time as random seed, not fixed one.");
 
     protected Classifier[] ensemble;
 
@@ -64,12 +73,12 @@ public class TheEnsemble extends AbstractClassifier implements MultiClassClassif
     // region utils
     protected int randomIntVal(int min, int max, int step)
     {
-        return min + step * classifierRandom.nextInt((max - min) / step + 1);
+        return min + step * this.classifierRandom.nextInt((max - min) / step + 1);
     }
 
     protected float randomFloatVal(float min, float max, float step)
     {
-        return min + step * classifierRandom.nextInt(Math.round((max - min) / step) + 1);
+        return min + step * this.classifierRandom.nextInt(Math.round((max - min) / step) + 1);
     }
 
     protected void varyHyperParametersOfHT(HoeffdingTree ht)
@@ -105,6 +114,17 @@ public class TheEnsemble extends AbstractClassifier implements MultiClassClassif
 
     @Override
     public void resetLearningImpl() {
+        //reset random seed
+        if (this.systemTimeAsRandomSeedOption.isSet())
+        {
+            this.randomSeed = (int) System.currentTimeMillis();
+        }
+        else
+        {
+            this.randomSeed = this.randomSeedOption.getValue();
+        }
+        this.classifierRandom = new Random(this.randomSeed);
+
         // reset total counter
         this.instancesProcessedFromBeginning = 0;
 
